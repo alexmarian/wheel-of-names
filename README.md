@@ -9,7 +9,8 @@ hard-coded.
   image (server serves the compiled SPA), deployed to a VPS.
 - **Multi-team:** each team lives at `/team/:id`; `team_id` in the schema from day one.
 - **Access:** read is open; every mutation is gated by a shared per-team PIN (scrypt-hashed,
-  constant-time compare, per-IP brute-force throttle).
+  constant-time compare, per-IP brute-force throttle). Changing the PIN requires the old one;
+  a forgotten PIN can be reset with the server's `REGISTRATION_SECRET` instead.
 
 ## The distribution algorithm
 
@@ -81,7 +82,8 @@ manage.
 | PATCH | `/api/teams/:id/members/:mid` | PIN | rename / toggle absent |
 | DELETE | `/api/teams/:id/members/:mid` | PIN | remove member |
 | PATCH | `/api/teams/:id/settings` | PIN | base_weight / gain_mult / floor_k / theme / name |
-| POST | `/api/teams/:id/pin` | PIN | change PIN |
+| POST | `/api/teams/:id/pin` | PIN | change PIN (needs the current one) |
+| POST | `/api/teams/:id/pin/reset` | admin secret | forgotten-PIN recovery (needs `REGISTRATION_SECRET`) |
 | POST | `/api/teams/:id/reset/day` | PIN | restore previous-day snapshot |
 | POST | `/api/teams/:id/reset/all` | PIN | reset all weights to baseline |
 | GET | `/api/teams/:id/stats` | read | leaders / droughts / due pick |

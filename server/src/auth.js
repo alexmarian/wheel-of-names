@@ -17,3 +17,12 @@ export function verifyPin(pin, salt, expectedHash) {
 export function newId(bytes = 8) {
   return randomBytes(bytes).toString('base64url');
 }
+
+// Constant-time string compare (for the shared REGISTRATION_SECRET, used as
+// the PIN-reset credential too — unlike a PIN there's no per-user hash to
+// verify against, so this is the only guard).
+export function safeEqual(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  return bufA.length === bufB.length && timingSafeEqual(bufA, bufB);
+}

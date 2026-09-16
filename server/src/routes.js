@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import db from './db.js';
-import { hashPin, verifyPin, newId } from './auth.js';
+import { hashPin, verifyPin, newId, safeEqual } from './auth.js';
 import { isLocked, recordFailure, recordSuccess, throttleKey, throttleRemainingMs } from './throttle.js';
 import {
   rosterCount,
@@ -122,6 +122,34 @@ router.patch('/teams/:id/settings', loadTeamParam, requirePin, (req, res) => {
 });
 
 router.post('/teams/:id/pin', loadTeamParam, requirePin, (req, res) => {
+  const pin = String(req.body.pin || '');
+  if (pin.length < 4 || pin.length > 8 || !/^\d+$/.test(pin)) {
+    return res.status(400).json({ error: 'PIN must be 4-8 digits' });
+  }
+  const { salt, hash } = hashPin(pin);
+  db.prepare('UPDATE teams SET pin_hash = ?, pin_salt = ? WHERE id = ?').run(hash, salt, req.team.id);
+  res.json({ ok: true });
+});
+
+// Forgotten-PIN recovery: set a new PIN without knowing the old one, gated by
+// the server's REGISTRATION_SECRET instead (same secret as team creation —
+// whoever runs the server, not the team, is the authority here). Disabled
+// entirely when the server has no secret configured, since that would mean
+// anyone could seize any team's PIN with no credential at all.
+router.post('/teams/:id/pin/reset', loadTeamParam, (req, res) => {
+  const requiredSecret = process.env.REGISTRATION_SECRET;
+  if (!requiredSecret) {
+    return res.status(403).json({ error: 'PIN reset is not enabled on this server' });
+  }
+  const key = throttleKey(req.ip, `${req.team.id}:pin-reset`);
+  if (isLocked(key)) {
+    return res.status(401).json({ error: 'invalid secret', retryInMs: throttleRemainingMs(key) });
+  }
+  if (!safeEqual(String(req.body.secret || ''), requiredSecret)) {
+    recordFailure(key);
+    return res.status(401).json({ error: 'invalid secret', retryInMs: throttleRemainingMs(key) });
+  }
+  recordSuccess(key);
   const pin = String(req.body.pin || '');
   if (pin.length < 4 || pin.length > 8 || !/^\d+$/.test(pin)) {
     return res.status(400).json({ error: 'PIN must be 4-8 digits' });

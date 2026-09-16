@@ -64,6 +64,9 @@ export const api = {
   // currentPin authenticates the request (x-pin header); newPin is the value being set (body).
   changePin: (tid, newPin, currentPin) =>
     request(tid, `/teams/${tid}/pin`, { method: 'POST', body: { pin: newPin }, pin: currentPin }),
+  // Forgotten-PIN recovery: the server's REGISTRATION_SECRET stands in for the old PIN.
+  resetPin: (tid, newPin, secret) =>
+    request(tid, `/teams/${tid}/pin/reset`, { method: 'POST', body: { pin: newPin, secret } }),
   resetDay: (tid, pin) => request(tid, `/teams/${tid}/reset/day`, { method: 'POST', body: {}, pin }),
   resetAll: (tid, pin) => request(tid, `/teams/${tid}/reset/all`, { method: 'POST', body: {}, pin }),
   stats: (tid) => request(tid, `/teams/${tid}/stats`),

@@ -9,11 +9,19 @@ const route = useRoute();
 const teamId = route.params.id;
 
 const form = ref({ name: '', base_weight: 10, gain_mult: 1, floor_k: 0.1, theme: 'wheel' });
+const pin0 = ref('');
 const pin1 = ref('');
 const pin2 = ref('');
 const loading = ref(true);
 const error = ref('');
 const notice = ref('');
+
+const showForgotPin = ref(false);
+const forgotSecret = ref('');
+const forgotPin1 = ref('');
+const forgotPin2 = ref('');
+const forgotError = ref('');
+const forgotNotice = ref('');
 
 const themeOptions = [
   { label: 'Wheel', value: 'wheel' },
@@ -57,23 +65,44 @@ async function save() {
 async function changePin() {
   error.value = '';
   notice.value = '';
+  if (!pin0.value) {
+    error.value = 'Enter the current PIN';
+    return;
+  }
   if (pin1.value !== pin2.value) {
-    error.value = 'PINs do not match';
+    error.value = 'New PINs do not match';
     return;
   }
   try {
-    await write(teamId, (pin) => api.changePin(teamId, pin1.value, pin), {
-      title: 'Change PIN',
-      message: 'Enter the current PIN to set a new one.',
-    });
-    // request() cached the *old* PIN (it authenticated with that); the team now
-    // expects the new one, so overwrite the cached value + restart the window.
+    // Sent directly (not via the cached session PIN) so this always checks
+    // the PIN the user just typed, not whatever happens to be cached.
+    await api.changePin(teamId, pin1.value, pin0.value);
     pinStore.set(teamId, pin1.value);
     notice.value = 'PIN changed.';
+    pin0.value = '';
     pin1.value = '';
     pin2.value = '';
   } catch (e) {
-    error.value = e.message;
+    error.value = e.status === 401 ? (e.retryInMs ? 'Too many attempts — try later.' : 'Wrong current PIN') : e.message;
+  }
+}
+
+async function forgotPinReset() {
+  forgotError.value = '';
+  forgotNotice.value = '';
+  if (forgotPin1.value !== forgotPin2.value) {
+    forgotError.value = 'New PINs do not match';
+    return;
+  }
+  try {
+    await api.resetPin(teamId, forgotPin1.value, forgotSecret.value);
+    pinStore.set(teamId, forgotPin1.value);
+    forgotNotice.value = 'PIN reset.';
+    forgotSecret.value = '';
+    forgotPin1.value = '';
+    forgotPin2.value = '';
+  } catch (e) {
+    forgotError.value = e.status === 401 ? (e.retryInMs ? 'Too many attempts — try later.' : 'Wrong admin secret') : e.message;
   }
 }
 
@@ -149,25 +178,75 @@ onMounted(load);
 
       <n-card style="max-width: 520px">
         <h3>Change PIN</h3>
-        <n-space>
+        <n-space vertical>
           <n-input
-            v-model:value="pin1"
+            v-model:value="pin0"
             type="password"
             show-password-on="click"
-            placeholder="New PIN (4–8 digits)"
+            placeholder="Current PIN"
             :input-props="{ inputmode: 'numeric' }"
-            style="flex: 1; min-width: 160px"
           />
-          <n-input
-            v-model:value="pin2"
-            type="password"
-            show-password-on="click"
-            placeholder="Repeat"
-            :input-props="{ inputmode: 'numeric' }"
-            style="flex: 1; min-width: 160px"
-          />
-          <n-button @click="changePin">Update PIN</n-button>
+          <n-space>
+            <n-input
+              v-model:value="pin1"
+              type="password"
+              show-password-on="click"
+              placeholder="New PIN (4–8 digits)"
+              :input-props="{ inputmode: 'numeric' }"
+              style="flex: 1; min-width: 160px"
+            />
+            <n-input
+              v-model:value="pin2"
+              type="password"
+              show-password-on="click"
+              placeholder="Repeat"
+              :input-props="{ inputmode: 'numeric' }"
+              style="flex: 1; min-width: 160px"
+            />
+            <n-button @click="changePin">Update PIN</n-button>
+          </n-space>
         </n-space>
+        <p v-if="!showForgotPin" class="muted" style="font-size: 13px">
+          Forgot the current PIN?
+          <a href="#" @click.prevent="showForgotPin = true">Reset it with the admin secret</a>.
+        </p>
+        <template v-else>
+          <hr style="margin: 16px 0" />
+          <h4 style="margin-top: 0">Reset PIN (admin secret)</h4>
+          <p class="muted" style="font-size: 13px; margin-top: 0">
+            Only works if the server has a registration secret configured — ask whoever
+            deployed this app for it.
+          </p>
+          <n-space vertical>
+            <n-input
+              v-model:value="forgotSecret"
+              type="password"
+              show-password-on="click"
+              placeholder="Admin secret"
+            />
+            <n-space>
+              <n-input
+                v-model:value="forgotPin1"
+                type="password"
+                show-password-on="click"
+                placeholder="New PIN (4–8 digits)"
+                :input-props="{ inputmode: 'numeric' }"
+                style="flex: 1; min-width: 160px"
+              />
+              <n-input
+                v-model:value="forgotPin2"
+                type="password"
+                show-password-on="click"
+                placeholder="Repeat"
+                :input-props="{ inputmode: 'numeric' }"
+                style="flex: 1; min-width: 160px"
+              />
+              <n-button @click="forgotPinReset">Reset PIN</n-button>
+            </n-space>
+          </n-space>
+          <p v-if="forgotError" class="error">{{ forgotError }}</p>
+          <p v-if="forgotNotice" class="notice">{{ forgotNotice }}</p>
+        </template>
       </n-card>
     </n-space>
   </div>
