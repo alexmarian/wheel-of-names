@@ -133,7 +133,7 @@ router.patch('/teams/:id/settings', loadTeamParam, requirePin, (req, res) => {
     patch.base_weight = normalizeNumber(base_weight, t.base_weight, 1, 1000);
   if (gain_mult !== undefined) patch.gain_mult = normalizeNumber(gain_mult, t.gain_mult, 0, 100);
   if (floor_k !== undefined) patch.floor_k = normalizeNumber(floor_k, t.floor_k, 0, 0.99);
-  if (theme !== undefined && ['wheel', 'horse', 'balloon', 'mountain'].includes(theme))
+  if (theme !== undefined && ['wheel', 'horse', 'derby', 'balloon', 'mountain', 'alien'].includes(theme))
     patch.theme = theme;
 
   const cols = Object.entries(patch).map(([k]) => k);

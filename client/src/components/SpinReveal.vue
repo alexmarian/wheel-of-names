@@ -4,6 +4,7 @@ import WheelTheme from './themes/WheelTheme.vue';
 import HorseTheme from './themes/HorseTheme.vue';
 import BalloonTheme from './themes/BalloonTheme.vue';
 import MountainTheme from './themes/MountainTheme.vue';
+import AlienTheme from './themes/AlienTheme.vue';
 
 const props = defineProps({
   entries: { type: Array, required: true }, // {id,name,weight,probability}
@@ -28,12 +29,14 @@ const labels = computed(() =>
 // Teams that still have the old 'monkey' theme stored fall through to the
 // default (Wheel) below rather than needing a DB migration.
 const themes = {
-  wheel: WheelTheme,
-  horse: HorseTheme,
-  balloon: BalloonTheme,
-  mountain: MountainTheme,
+  wheel: { is: WheelTheme },
+  horse: { is: HorseTheme },
+  derby: { is: HorseTheme, props: { variant: 'colour' } },
+  balloon: { is: BalloonTheme },
+  mountain: { is: MountainTheme },
+  alien: { is: AlienTheme },
 };
-const active = computed(() => themes[props.theme] || WheelTheme);
+const active = computed(() => themes[props.theme] || themes.wheel);
 const resolved = computed(() =>
   inPlay.value.map((e, i) => ({
     ...e,
@@ -45,7 +48,8 @@ const resolved = computed(() =>
 
 <template>
   <component
-    :is="active"
+    :is="active.is"
+    v-bind="active.props"
     :labels="labels"
     :entries="resolved"
     :winner-id="winnerId"

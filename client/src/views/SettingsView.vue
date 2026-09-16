@@ -40,8 +40,10 @@ const forgotError = ref('');
 const themeOptions = [
   { label: 'Wheel', value: 'wheel' },
   { label: 'Horse race', value: 'horse' },
+  { label: 'Derby (colour horses)', value: 'derby' },
   { label: 'Hot air balloon', value: 'balloon' },
   { label: 'Mountaineer', value: 'mountain' },
+  { label: 'Alien shooter', value: 'alien' },
 ];
 
 async function load() {

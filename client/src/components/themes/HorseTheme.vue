@@ -5,6 +5,9 @@ const props = defineProps({
   entries: { type: Array, required: true },
   winnerId: { type: String, required: true },
   labels: { type: Array, required: true },
+  // 'silhouette': black sprite used as a mask and filled with the lane colour.
+  // 'colour': painted horse + rider sprite, shown as drawn.
+  variant: { type: String, default: 'silhouette' },
 });
 const emit = defineEmits(['finished']);
 
@@ -21,10 +24,14 @@ const gallopDur = props.entries.map(() => (0.26 + Math.random() * 0.14).toFixed(
 // progress is the nose position along the rail, so the sprite is pulled back
 // by its own width as it advances and stops flush with the finish line.
 const runnerLeft = (p) => `calc(${p}% - ${p / 100} * var(--runner-w))`;
+
+// The silhouette is filled with the lane colour; the painted sprite is left
+// as drawn and the name label alone carries the lane colour.
+const runnerStyle = (i) => (props.variant === 'colour' ? {} : { backgroundColor: props.labels[i].color });
 </script>
 
 <template>
-  <div class="racetrack">
+  <div class="racetrack" :class="`variant-${variant}`">
     <div class="finish"></div>
     <div v-for="(e, i) in entries" :key="e.id" class="lane" :class="{ win: e.isWinner && done }">
       <span class="lane-name" :style="{ color: labels[i].color }">{{ e.name }}</span>
@@ -38,7 +45,7 @@ const runnerLeft = (p) => `calc(${p}% - ${p / 100} * var(--runner-w))`;
           :class="{ galloping: !done, win: e.isWinner && done }"
           :style="{
             left: runnerLeft(progress[i]),
-            backgroundColor: labels[i].color,
+            ...runnerStyle(i),
             animationDelay: !done ? gallopDelay[i] + 's' : undefined,
             animationDuration: !done ? gallopDur[i] + 's' : undefined,
           }"
@@ -105,8 +112,7 @@ const runnerLeft = (p) => `calc(${p}% - ${p / 100} * var(--runner-w))`;
   top: 0;
   width: var(--runner-w);
   height: var(--runner-h);
-  /* Sprite art faces left; the race runs left-to-right, so flip it. */
-  transform: translateY(-4px) scaleX(-1);
+  transform: translateY(-4px) scaleX(var(--flip));
   /* The sprite art is a solid silhouette, so it's used as a mask over a
      per-lane background-color to tint each horse. Sheet is 12 gallop frames
      side by side; at 1200% width each frame is exactly one runner width, so
@@ -115,14 +121,14 @@ const runnerLeft = (p) => `calc(${p}% - ${p / 100} * var(--runner-w))`;
   mask-image: url('../../assets/horse/gallop-sprite.png');
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
-  -webkit-mask-size: 1200% 100%;
-  mask-size: 1200% 100%;
+  -webkit-mask-size: calc(var(--frames) * 100%) 100%;
+  mask-size: calc(var(--frames) * 100%) 100%;
   -webkit-mask-position: 0 0;
   mask-position: 0 0;
 }
 .runner.galloping {
   animation-name: gallop-frames, gallop-bob;
-  animation-timing-function: steps(12), ease-in-out;
+  animation-timing-function: steps(var(--frames)), ease-in-out;
   animation-iteration-count: infinite;
 }
 .runner.win {
@@ -137,17 +143,17 @@ const runnerLeft = (p) => `calc(${p}% - ${p / 100} * var(--runner-w))`;
     mask-position-x: 0;
   }
   to {
-    -webkit-mask-position-x: calc(var(--runner-w) * -12);
-    mask-position-x: calc(var(--runner-w) * -12);
+    -webkit-mask-position-x: calc(var(--runner-w) * -1 * var(--frames));
+    mask-position-x: calc(var(--runner-w) * -1 * var(--frames));
   }
 }
 @keyframes gallop-bob {
   0%,
   100% {
-    transform: translateY(-4px) scaleX(-1);
+    transform: translateY(-4px) scaleX(var(--flip));
   }
   50% {
-    transform: translateY(-9px) scaleX(-1);
+    transform: translateY(-9px) scaleX(var(--flip));
   }
 }
 .dust {
@@ -176,13 +182,47 @@ const runnerLeft = (p) => `calc(${p}% - ${p / 100} * var(--runner-w))`;
 }
 @keyframes trophy-bounce {
   0% {
-    transform: translateY(-4px) scaleX(-1) scale(1);
+    transform: translateY(-4px) scaleX(var(--flip)) scale(1);
   }
   40% {
-    transform: translateY(-22px) scaleX(-1) scale(1.3);
+    transform: translateY(-22px) scaleX(var(--flip)) scale(1.3);
   }
   100% {
-    transform: translateY(-4px) scaleX(-1) scale(1);
+    transform: translateY(-4px) scaleX(var(--flip)) scale(1);
+  }
+}
+
+/* ── colour variant: painted sprite instead of a tinted mask ─────────────── */
+.variant-colour {
+  --runner-w: 96px;
+  --runner-h: 84px;
+  --frames: 11;
+  --flip: 1; /* painted art already faces right */
+}
+.variant-colour .lane {
+  min-height: 92px;
+  max-height: 124px;
+}
+.variant-colour .runner {
+  -webkit-mask-image: none;
+  mask-image: none;
+  background-image: url('../../assets/derby/gallop-sprite.png');
+  background-repeat: no-repeat;
+  background-size: calc(var(--frames) * 100%) 100%;
+  background-position: 0 0;
+}
+.variant-colour .runner.galloping {
+  animation-name: gallop-frames-bg, gallop-bob;
+}
+.variant-colour .runner.win {
+  background-position: calc(var(--runner-w) * -2) 0;
+}
+@keyframes gallop-frames-bg {
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: calc(var(--runner-w) * -1 * var(--frames));
   }
 }
 </style>

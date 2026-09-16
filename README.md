@@ -42,7 +42,7 @@ Weights floor at floor_k × base_weight (default 0.10); never hard-zero.
 
 ## Animation
 
-Multiple selectable reveal themes (Wheel, Horse race, Balloon, Mountaineer). The winner is chosen by a
+Multiple selectable reveal themes (Wheel, Horse race, Derby, Balloon, Mountaineer, Alien shooter). The winner is chosen by a
 **single authoritative weighted draw**; the animation is a **choreographed reveal** that always
 ends with that pre-chosen winner — so the visuals never change the actual odds. A **Preview**
 button runs the animation without recording anything.
