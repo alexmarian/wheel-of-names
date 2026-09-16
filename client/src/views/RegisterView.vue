@@ -1,30 +1,28 @@
 <script setup>
 import { ref } from 'vue';
 import { useRouter } from 'vue-router';
-import { NCard, NFormItem, NInput, NButton } from 'naive-ui';
+import { NCard, NForm, NFormItem, NInput, NButton, NAlert, NSpace } from 'naive-ui';
 import { api, pinStore } from '../api.js';
+import { authErrorMessage } from '../pinGate.js';
 
 const router = useRouter();
-const name = ref('');
-const pin = ref('');
-const pin2 = ref('');
-const secret = ref('');
+const form = ref({ name: '', pin: '', repeat: '', secret: '' });
 const error = ref('');
 const creating = ref(false);
 
 async function create() {
   error.value = '';
-  if (pin.value !== pin2.value) {
+  if (form.value.pin !== form.value.repeat) {
     error.value = 'PINs do not match';
     return;
   }
   creating.value = true;
   try {
-    const { id } = await api.createTeam(name.value || 'Team', pin.value, secret.value);
-    pinStore.set(id, pin.value);
+    const { id } = await api.createTeam(form.value.name || 'Team', form.value.pin, form.value.secret);
+    pinStore.set(id, form.value.pin);
     router.push(`/team/${id}`);
   } catch (e) {
-    error.value = e.message;
+    error.value = authErrorMessage(e, 'registration secret');
   } finally {
     creating.value = false;
   }
@@ -32,49 +30,39 @@ async function create() {
 </script>
 
 <template>
-  <div>
-    <h1>Create a new name picker</h1>
-    <p class="muted">
-      Each team gets its own link (<code>/team/:id</code>) and PIN. The picker favors people who
-      haven't been picked for a long time, and avoids picking the same person twice in a row.
-    </p>
-    <n-card style="max-width: 420px">
-      <n-form-item label="Team name">
-        <n-input v-model:value="name" placeholder="e.g. Squad A" @keyup.enter="create" />
-      </n-form-item>
-      <n-form-item label="PIN (4–8 digits) — required for every action that changes the picker">
-        <n-input
-          v-model:value="pin"
-          type="password"
-          show-password-on="click"
-          placeholder="1234"
-          :input-props="{ inputmode: 'numeric' }"
-          @keyup.enter="create"
-        />
-      </n-form-item>
-      <n-form-item label="Repeat PIN">
-        <n-input
-          v-model:value="pin2"
-          type="password"
-          show-password-on="click"
-          placeholder="1234"
-          :input-props="{ inputmode: 'numeric' }"
-          @keyup.enter="create"
-        />
-      </n-form-item>
-      <n-form-item label="Registration secret (ask your admin, if one is configured)">
-        <n-input
-          v-model:value="secret"
-          type="password"
-          show-password-on="click"
-          placeholder="optional"
-          @keyup.enter="create"
-        />
-      </n-form-item>
-      <p v-if="error" class="error">{{ error }}</p>
-      <n-button type="primary" block :loading="creating" :disabled="creating" @click="create">
-        {{ creating ? 'Creating…' : 'Create team' }}
-      </n-button>
+  <div class="narrow">
+    <h2>Create a new team</h2>
+    <n-card>
+      <n-form label-placement="top" @submit.prevent="create">
+        <n-form-item label="Team name">
+          <n-input v-model:value="form.name" placeholder="e.g. Squad A" />
+        </n-form-item>
+        <n-form-item label="PIN (4 to 8 digits)" feedback="Required for every action that changes the picker.">
+          <n-input
+            v-model:value="form.pin"
+            type="password"
+            show-password-on="click"
+            :input-props="{ inputmode: 'numeric', autocomplete: 'new-password' }"
+          />
+        </n-form-item>
+        <n-form-item label="Repeat PIN">
+          <n-input
+            v-model:value="form.repeat"
+            type="password"
+            show-password-on="click"
+            :input-props="{ inputmode: 'numeric', autocomplete: 'new-password' }"
+          />
+        </n-form-item>
+        <n-form-item label="Registration secret" feedback="Ask your admin. Leave empty if this server allows open registration.">
+          <n-input v-model:value="form.secret" type="password" show-password-on="click" />
+        </n-form-item>
+        <n-space vertical>
+          <n-alert v-if="error" type="error" closable @close="error = ''">{{ error }}</n-alert>
+          <n-button type="primary" block attr-type="submit" :loading="creating" :disabled="creating">
+            Create team
+          </n-button>
+        </n-space>
+      </n-form>
     </n-card>
   </div>
 </template>

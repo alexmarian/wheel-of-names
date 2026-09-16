@@ -1,5 +1,5 @@
 <script setup>
-import { NButton } from 'naive-ui';
+import { NButton, NText } from 'naive-ui';
 </script>
 
 <template>
@@ -10,10 +10,10 @@ import { NButton } from 'naive-ui';
       <div class="wheel-pointer"></div>
     </div>
     <h1>Wheel of Names</h1>
-    <p class="muted">
-      A weighted, self-hosted name picker — pick to choose who's up today. People who haven't
-      been picked in a while get a better chance; the last pick won't come up twice in a row.
-    </p>
+    <n-text depth="3" class="blurb">
+      A weighted, self-hosted name picker. People who haven't been picked in a while get a better
+      chance, and the last pick won't come up twice in a row.
+    </n-text>
     <router-link to="/register">
       <n-button type="primary" size="large">Create a new team</n-button>
     </router-link>
@@ -39,7 +39,6 @@ import { NButton } from 'naive-ui';
   height: 120px;
   border-radius: 50%;
   border: 3px solid var(--border);
-  filter: drop-shadow(0 16px 32px rgba(0, 0, 0, 0.4));
 }
 .wheel-spin {
   position: absolute;
@@ -75,7 +74,6 @@ import { NButton } from 'naive-ui';
   border-left: 9px solid transparent;
   border-right: 9px solid transparent;
   border-top: 16px solid var(--text);
-  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
 }
 @keyframes sprite-spin {
   from {
@@ -88,7 +86,7 @@ import { NButton } from 'naive-ui';
 h1 {
   margin: 0;
 }
-.landing p {
+.blurb {
   max-width: 480px;
 }
 @media (prefers-reduced-motion: reduce) {

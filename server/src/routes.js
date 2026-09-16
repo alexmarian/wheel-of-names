@@ -77,15 +77,39 @@ const normalizeNumber = (v, dflt, min, max) => {
   return Math.min(max, Math.max(min, n));
 };
 
-// ── teams: create (gated by a shared registration secret, when configured) ─
-router.post('/teams', (req, res) => {
-  const requiredSecret = process.env.REGISTRATION_SECRET;
-  if (requiredSecret && String(req.body.secret || '') !== requiredSecret) {
-    return res.status(401).json({ error: 'invalid registration secret' });
-  }
+// ── shared admin secret (REGISTRATION_SECRET) ──────────────────────────────
+// Gates team creation and forgotten-PIN recovery. The secret is global, so
+// the brute-force throttle is keyed on the client IP alone (never per team,
+// or an attacker would get a fresh attempt budget for every team id).
+// `whenUnset` decides what happens with no secret configured: creation stays
+// open ('allow'), PIN reset is disabled ('deny') since nothing would gate it.
+function requireSecret(whenUnset) {
+  return (req, res, next) => {
+    const requiredSecret = process.env.REGISTRATION_SECRET;
+    if (!requiredSecret) {
+      if (whenUnset === 'allow') return next();
+      return res.status(403).json({ error: 'PIN reset is not enabled on this server' });
+    }
+    const key = throttleKey(req.ip, 'secret');
+    if (isLocked(key)) {
+      return res.status(401).json({ error: 'invalid secret', retryInMs: throttleRemainingMs(key) });
+    }
+    if (!safeEqual(String(req.body.secret || ''), requiredSecret)) {
+      recordFailure(key);
+      return res.status(401).json({ error: 'invalid secret', retryInMs: throttleRemainingMs(key) });
+    }
+    recordSuccess(key);
+    next();
+  };
+}
+
+const validPin = (pin) => pin.length >= 4 && pin.length <= 8 && /^\d+$/.test(pin);
+
+// ── teams: create ───────────────────────────────────────────────────────────
+router.post('/teams', requireSecret('allow'), (req, res) => {
   const name = String(req.body.name || 'Team').slice(0, 80);
   const pin = String(req.body.pin || '');
-  if (pin.length < 4 || pin.length > 8 || !/^\d+$/.test(pin)) {
+  if (!validPin(pin)) {
     return res.status(400).json({ error: 'PIN must be 4-8 digits' });
   }
   const id = newId();
@@ -121,42 +145,25 @@ router.patch('/teams/:id/settings', loadTeamParam, requirePin, (req, res) => {
   res.json(teamState(getTeam(req.team.id)));
 });
 
-router.post('/teams/:id/pin', loadTeamParam, requirePin, (req, res) => {
+function setPin(req, res) {
   const pin = String(req.body.pin || '');
-  if (pin.length < 4 || pin.length > 8 || !/^\d+$/.test(pin)) {
-    return res.status(400).json({ error: 'PIN must be 4-8 digits' });
+  if (!validPin(pin)) {
+    res.status(400).json({ error: 'PIN must be 4-8 digits' });
+    return false;
   }
   const { salt, hash } = hashPin(pin);
   db.prepare('UPDATE teams SET pin_hash = ?, pin_salt = ? WHERE id = ?').run(hash, salt, req.team.id);
   res.json({ ok: true });
-});
+  return true;
+}
 
-// Forgotten-PIN recovery: set a new PIN without knowing the old one, gated by
-// the server's REGISTRATION_SECRET instead (same secret as team creation —
-// whoever runs the server, not the team, is the authority here). Disabled
-// entirely when the server has no secret configured, since that would mean
-// anyone could seize any team's PIN with no credential at all.
-router.post('/teams/:id/pin/reset', loadTeamParam, (req, res) => {
-  const requiredSecret = process.env.REGISTRATION_SECRET;
-  if (!requiredSecret) {
-    return res.status(403).json({ error: 'PIN reset is not enabled on this server' });
+router.post('/teams/:id/pin', loadTeamParam, requirePin, setPin);
+
+// Forgotten-PIN recovery: the server operator's secret stands in for the old PIN.
+router.post('/teams/:id/pin/reset', loadTeamParam, requireSecret('deny'), (req, res) => {
+  if (setPin(req, res)) {
+    console.log(`[auth] PIN reset via admin secret for team ${req.team.id} from ${req.ip}`);
   }
-  const key = throttleKey(req.ip, `${req.team.id}:pin-reset`);
-  if (isLocked(key)) {
-    return res.status(401).json({ error: 'invalid secret', retryInMs: throttleRemainingMs(key) });
-  }
-  if (!safeEqual(String(req.body.secret || ''), requiredSecret)) {
-    recordFailure(key);
-    return res.status(401).json({ error: 'invalid secret', retryInMs: throttleRemainingMs(key) });
-  }
-  recordSuccess(key);
-  const pin = String(req.body.pin || '');
-  if (pin.length < 4 || pin.length > 8 || !/^\d+$/.test(pin)) {
-    return res.status(400).json({ error: 'PIN must be 4-8 digits' });
-  }
-  const { salt, hash } = hashPin(pin);
-  db.prepare('UPDATE teams SET pin_hash = ?, pin_salt = ? WHERE id = ?').run(hash, salt, req.team.id);
-  res.json({ ok: true });
 });
 
 // ── members (write = PIN-gated) ────────────────────────────────────────────

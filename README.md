@@ -10,7 +10,9 @@ hard-coded.
 - **Multi-team:** each team lives at `/team/:id`; `team_id` in the schema from day one.
 - **Access:** read is open; every mutation is gated by a shared per-team PIN (scrypt-hashed,
   constant-time compare, per-IP brute-force throttle). Changing the PIN requires the old one;
-  a forgotten PIN can be reset with the server's `REGISTRATION_SECRET` instead.
+  a forgotten PIN can be reset with the server's `REGISTRATION_SECRET` instead. That secret is
+  checked in constant time and throttled per client IP (shared between team creation and PIN
+  reset). The server trusts one proxy hop so the throttle sees the real client behind Caddy.
 
 ## The distribution algorithm
 
@@ -52,6 +54,8 @@ button runs the animation without recording anything.
 npm run dev:server     # server on :3000, vite proxies /api -> :3000
 # terminal 2
 npm run dev:client     # SPA on :5173
+
+npm --prefix server test   # auth route tests (Node's built-in runner)
 ```
 
 ## Production / deployment

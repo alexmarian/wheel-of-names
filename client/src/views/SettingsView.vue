@@ -1,27 +1,41 @@
 <script setup>
 import { onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import { NCard, NFormItem, NInput, NInputNumber, NSelect, NButton, NSpace } from 'naive-ui';
+import {
+  NCard,
+  NForm,
+  NFormItem,
+  NInput,
+  NInputNumber,
+  NSelect,
+  NButton,
+  NSpace,
+  NAlert,
+  NSpin,
+  NText,
+  NDivider,
+  NPopconfirm,
+  useMessage,
+} from 'naive-ui';
 import { api, pinStore } from '../api.js';
-import { write } from '../pinGate.js';
+import { write, isCancelled, authErrorMessage } from '../pinGate.js';
 
 const route = useRoute();
 const teamId = route.params.id;
+const message = useMessage();
 
 const form = ref({ name: '', base_weight: 10, gain_mult: 1, floor_k: 0.1, theme: 'wheel' });
-const pin0 = ref('');
-const pin1 = ref('');
-const pin2 = ref('');
 const loading = ref(true);
-const error = ref('');
-const notice = ref('');
+const loadError = ref('');
+const settingsError = ref('');
+const resetError = ref('');
 
-const showForgotPin = ref(false);
-const forgotSecret = ref('');
-const forgotPin1 = ref('');
-const forgotPin2 = ref('');
+const pin = ref({ current: '', next: '', repeat: '' });
+const pinError = ref('');
+
+const showForgot = ref(false);
+const forgot = ref({ secret: '', next: '', repeat: '' });
 const forgotError = ref('');
-const forgotNotice = ref('');
 
 const themeOptions = [
   { label: 'Wheel', value: 'wheel' },
@@ -31,223 +45,233 @@ const themeOptions = [
 ];
 
 async function load() {
-  loading.value = true;
   try {
-    const state = await api.getTeam(teamId);
+    const { team } = await api.getTeam(teamId);
     form.value = {
-      name: state.team.name,
-      base_weight: state.team.base_weight,
-      gain_mult: state.team.gain_mult,
-      floor_k: state.team.floor_k,
-      theme: state.team.theme,
+      name: team.name,
+      base_weight: team.base_weight,
+      gain_mult: team.gain_mult,
+      floor_k: team.floor_k,
+      theme: team.theme,
     };
   } catch (e) {
-    error.value = e.message;
+    loadError.value = e.message;
   } finally {
     loading.value = false;
   }
 }
 
-async function save() {
-  error.value = '';
-  notice.value = '';
+// Runs a PIN-gated write; a dismissed prompt is not an error.
+async function guarded(errorRef, fn, onOk) {
+  errorRef.value = '';
   try {
-    await write(teamId, (pin) => api.updateSettings(teamId, form.value, pin), {
-      title: 'Save settings',
-      message: 'Enter the PIN to update wheel settings.',
-    });
-    notice.value = 'Settings saved.';
+    const res = await fn();
+    onOk(res);
   } catch (e) {
-    error.value = e.message;
+    if (!isCancelled(e)) errorRef.value = authErrorMessage(e);
   }
 }
 
-async function changePin() {
-  error.value = '';
-  notice.value = '';
-  if (!pin0.value) {
-    error.value = 'Enter the current PIN';
-    return;
-  }
-  if (pin1.value !== pin2.value) {
-    error.value = 'New PINs do not match';
-    return;
-  }
-  try {
-    // Sent directly (not via the cached session PIN) so this always checks
-    // the PIN the user just typed, not whatever happens to be cached.
-    await api.changePin(teamId, pin1.value, pin0.value);
-    pinStore.set(teamId, pin1.value);
-    notice.value = 'PIN changed.';
-    pin0.value = '';
-    pin1.value = '';
-    pin2.value = '';
-  } catch (e) {
-    error.value = e.status === 401 ? (e.retryInMs ? 'Too many attempts — try later.' : 'Wrong current PIN') : e.message;
-  }
+const save = () =>
+  guarded(
+    settingsError,
+    () =>
+      write(teamId, (p) => api.updateSettings(teamId, form.value, p), {
+        title: 'Save settings',
+        message: 'Enter the PIN to update wheel settings.',
+      }),
+    () => message.success('Settings saved')
+  );
+
+const resetAll = () =>
+  guarded(
+    resetError,
+    () =>
+      write(teamId, (p) => api.resetAll(teamId, p), {
+        title: 'Reset',
+        message: 'Enter the PIN to reset all weights to baseline.',
+      }),
+    () => message.success('Weights reset to baseline')
+  );
+
+const resetDay = () =>
+  guarded(
+    resetError,
+    () =>
+      write(teamId, (p) => api.resetDay(teamId, p), {
+        title: 'Reset to previous day',
+        message: 'Restore weights from the most recent previous-day snapshot.',
+      }),
+    (res) =>
+      message.success(res.restored_from ? `Restored snapshot of ${res.restored_from}` : 'Weights restored')
+  );
+
+function changePin() {
+  pinError.value = '';
+  if (!pin.value.current) return (pinError.value = 'Enter the current PIN');
+  if (pin.value.next !== pin.value.repeat) return (pinError.value = 'New PINs do not match');
+  // Sent directly rather than through the session cache so it always checks
+  // the PIN the user just typed.
+  guarded(
+    pinError,
+    () => api.changePin(teamId, pin.value.next, pin.value.current),
+    () => {
+      pinStore.set(teamId, pin.value.next);
+      pin.value = { current: '', next: '', repeat: '' };
+      message.success('PIN changed');
+    }
+  );
 }
 
-async function forgotPinReset() {
+function forgotPinReset() {
   forgotError.value = '';
-  forgotNotice.value = '';
-  if (forgotPin1.value !== forgotPin2.value) {
-    forgotError.value = 'New PINs do not match';
-    return;
-  }
-  try {
-    await api.resetPin(teamId, forgotPin1.value, forgotSecret.value);
-    pinStore.set(teamId, forgotPin1.value);
-    forgotNotice.value = 'PIN reset.';
-    forgotSecret.value = '';
-    forgotPin1.value = '';
-    forgotPin2.value = '';
-  } catch (e) {
-    forgotError.value = e.status === 401 ? (e.retryInMs ? 'Too many attempts — try later.' : 'Wrong admin secret') : e.message;
-  }
-}
-
-async function resetAll() {
-  if (!confirm('Reset all weights to baseline? This does NOT erase the pick history.')) return;
-  error.value = '';
-  notice.value = '';
-  try {
-    await write(teamId, (pin) => api.resetAll(teamId, pin), { title: 'Reset', message: 'Enter PIN to reset all weights to baseline.' });
-    notice.value = 'Weights reset to baseline.';
-  } catch (e) {
-    error.value = e.message;
-  }
-}
-
-async function resetDay() {
-  error.value = '';
-  notice.value = '';
-  try {
-    const res = await write(teamId, (pin) => api.resetDay(teamId, pin), {
-      title: 'Reset to previous day',
-      message: 'Restore weights from the most recent previous-day snapshot.',
-    });
-    notice.value = res.restored_from
-      ? `Restored from snapshot of ${res.restored_from}.`
-      : 'Weights restored.';
-  } catch (e) {
-    error.value = e.message;
-  }
+  if (forgot.value.next !== forgot.value.repeat) return (forgotError.value = 'New PINs do not match');
+  forgotError.value = '';
+  api
+    .resetPin(teamId, forgot.value.next, forgot.value.secret)
+    .then(() => {
+      pinStore.set(teamId, forgot.value.next);
+      forgot.value = { secret: '', next: '', repeat: '' };
+      showForgot.value = false;
+      message.success('PIN reset');
+    })
+    .catch((e) => (forgotError.value = authErrorMessage(e, 'admin secret')));
 }
 
 onMounted(load);
 </script>
 
 <template>
-  <div>
+  <div class="narrow">
     <h2>Settings</h2>
-    <p v-if="error" class="error">{{ error }}</p>
-    <p v-if="notice" class="notice">{{ notice }}</p>
-    <div v-if="loading" class="empty">Loading…</div>
+    <n-spin v-if="loading" size="large" class="loading" />
+    <n-alert v-else-if="loadError" type="error" title="Could not load this team">{{ loadError }}</n-alert>
 
-    <n-space v-else vertical size="large" style="width: 100%">
-      <n-card style="max-width: 520px">
-        <h3>Wheel behaviour</h3>
-        <n-form-item label="Team name">
-          <n-input v-model:value="form.name" />
-        </n-form-item>
-        <n-form-item label="Base weight (W) — baseline each member starts at; the picked penalty = W">
-          <n-input-number v-model:value="form.base_weight" :min="1" :step="1" style="width: 100%" />
-        </n-form-item>
-        <n-form-item label="Gain multiplier — speed weights drift apart (0 = uniform random)">
-          <n-input-number v-model:value="form.gain_mult" :min="0" :step="0.1" style="width: 100%" />
-        </n-form-item>
-        <n-form-item label="Floor (k × base) — minimum chance anyone keeps">
-          <n-input-number v-model:value="form.floor_k" :min="0" :max="0.99" :step="0.01" style="width: 100%" />
-        </n-form-item>
-        <n-form-item label="Animation theme">
-          <n-select v-model:value="form.theme" :options="themeOptions" />
-        </n-form-item>
-        <n-button type="primary" @click="save">Save settings</n-button>
-      </n-card>
-
-      <n-card style="max-width: 520px">
-        <h3>Reset</h3>
-        <p class="muted" style="font-size: 13px">
-          The pick history is never erased. Only weights change.
-        </p>
-        <n-space>
-          <n-button @click="resetDay">Undo to previous day</n-button>
-          <n-button type="error" ghost @click="resetAll">Reset all to baseline</n-button>
-        </n-space>
-      </n-card>
-
-      <n-card style="max-width: 520px">
-        <h3>Change PIN</h3>
-        <n-space vertical>
-          <n-input
-            v-model:value="pin0"
-            type="password"
-            show-password-on="click"
-            placeholder="Current PIN"
-            :input-props="{ inputmode: 'numeric' }"
-          />
-          <n-space>
-            <n-input
-              v-model:value="pin1"
-              type="password"
-              show-password-on="click"
-              placeholder="New PIN (4–8 digits)"
-              :input-props="{ inputmode: 'numeric' }"
-              style="flex: 1; min-width: 160px"
-            />
-            <n-input
-              v-model:value="pin2"
-              type="password"
-              show-password-on="click"
-              placeholder="Repeat"
-              :input-props="{ inputmode: 'numeric' }"
-              style="flex: 1; min-width: 160px"
-            />
-            <n-button @click="changePin">Update PIN</n-button>
-          </n-space>
-        </n-space>
-        <p v-if="!showForgotPin" class="muted" style="font-size: 13px">
-          Forgot the current PIN?
-          <a href="#" @click.prevent="showForgotPin = true">Reset it with the admin secret</a>.
-        </p>
-        <template v-else>
-          <hr style="margin: 16px 0" />
-          <h4 style="margin-top: 0">Reset PIN (admin secret)</h4>
-          <p class="muted" style="font-size: 13px; margin-top: 0">
-            Only works if the server has a registration secret configured — ask whoever
-            deployed this app for it.
-          </p>
+    <n-space v-else vertical size="large">
+      <n-card title="Wheel behaviour">
+        <n-form label-placement="top" @submit.prevent="save">
+          <n-form-item label="Team name">
+            <n-input v-model:value="form.name" />
+          </n-form-item>
+          <n-form-item label="Base weight" feedback="Baseline each member starts at. The picked penalty equals this value.">
+            <n-input-number v-model:value="form.base_weight" :min="1" :step="1" style="width: 100%" />
+          </n-form-item>
+          <n-form-item label="Gain multiplier" feedback="How fast weights drift apart. 0 means uniform random.">
+            <n-input-number v-model:value="form.gain_mult" :min="0" :step="0.1" style="width: 100%" />
+          </n-form-item>
+          <n-form-item label="Floor" feedback="Minimum chance anyone keeps, as a fraction of base weight.">
+            <n-input-number v-model:value="form.floor_k" :min="0" :max="0.99" :step="0.01" style="width: 100%" />
+          </n-form-item>
+          <n-form-item label="Animation theme">
+            <n-select v-model:value="form.theme" :options="themeOptions" />
+          </n-form-item>
           <n-space vertical>
+            <n-button type="primary" attr-type="submit">Save settings</n-button>
+            <n-alert v-if="settingsError" type="error" closable @close="settingsError = ''">{{ settingsError }}</n-alert>
+          </n-space>
+        </n-form>
+      </n-card>
+
+      <n-card title="Reset">
+        <n-space vertical>
+          <n-text depth="3">The pick history is never erased. Only weights change.</n-text>
+          <n-space>
+            <n-button @click="resetDay">Undo to previous day</n-button>
+            <n-popconfirm @positive-click="resetAll">
+              <template #trigger>
+                <n-button type="error">Reset all to baseline</n-button>
+              </template>
+              Reset every weight to baseline? The pick history is kept.
+            </n-popconfirm>
+          </n-space>
+          <n-alert v-if="resetError" type="error" closable @close="resetError = ''">{{ resetError }}</n-alert>
+        </n-space>
+      </n-card>
+
+      <n-card title="Change PIN">
+        <n-form label-placement="top" @submit.prevent="changePin">
+          <n-form-item label="Current PIN">
             <n-input
-              v-model:value="forgotSecret"
+              v-model:value="pin.current"
               type="password"
               show-password-on="click"
-              placeholder="Admin secret"
+              :input-props="{ inputmode: 'numeric', autocomplete: 'current-password' }"
             />
-            <n-space>
+          </n-form-item>
+          <n-space :wrap="false" style="width: 100%">
+            <n-form-item label="New PIN (4 to 8 digits)" style="flex: 1">
               <n-input
-                v-model:value="forgotPin1"
+                v-model:value="pin.next"
                 type="password"
                 show-password-on="click"
-                placeholder="New PIN (4–8 digits)"
-                :input-props="{ inputmode: 'numeric' }"
-                style="flex: 1; min-width: 160px"
+                :input-props="{ inputmode: 'numeric', autocomplete: 'new-password' }"
               />
+            </n-form-item>
+            <n-form-item label="Repeat" style="flex: 1">
               <n-input
-                v-model:value="forgotPin2"
+                v-model:value="pin.repeat"
                 type="password"
                 show-password-on="click"
-                placeholder="Repeat"
-                :input-props="{ inputmode: 'numeric' }"
-                style="flex: 1; min-width: 160px"
+                :input-props="{ inputmode: 'numeric', autocomplete: 'new-password' }"
               />
-              <n-button @click="forgotPinReset">Reset PIN</n-button>
-            </n-space>
+            </n-form-item>
           </n-space>
-          <p v-if="forgotError" class="error">{{ forgotError }}</p>
-          <p v-if="forgotNotice" class="notice">{{ forgotNotice }}</p>
-        </template>
+          <n-space vertical>
+            <n-button attr-type="submit">Update PIN</n-button>
+            <n-alert v-if="pinError" type="error" closable @close="pinError = ''">{{ pinError }}</n-alert>
+          </n-space>
+        </n-form>
+
+        <n-divider />
+
+        <n-button v-if="!showForgot" text type="primary" @click="showForgot = true">
+          Forgot it? Reset the PIN with the admin secret.
+        </n-button>
+        <n-form v-else label-placement="top" @submit.prevent="forgotPinReset">
+          <n-space vertical size="small" style="margin-bottom: 16px">
+            <n-text strong>Reset PIN with the admin secret</n-text>
+            <n-text depth="3">
+              Ask whoever runs this server for the admin secret. If none is configured, reset is disabled.
+            </n-text>
+          </n-space>
+          <n-form-item label="Admin secret">
+            <n-input v-model:value="forgot.secret" type="password" show-password-on="click" />
+          </n-form-item>
+          <n-space :wrap="false" style="width: 100%">
+            <n-form-item label="New PIN (4 to 8 digits)" style="flex: 1">
+              <n-input
+                v-model:value="forgot.next"
+                type="password"
+                show-password-on="click"
+                :input-props="{ inputmode: 'numeric', autocomplete: 'new-password' }"
+              />
+            </n-form-item>
+            <n-form-item label="Repeat" style="flex: 1">
+              <n-input
+                v-model:value="forgot.repeat"
+                type="password"
+                show-password-on="click"
+                :input-props="{ inputmode: 'numeric', autocomplete: 'new-password' }"
+              />
+            </n-form-item>
+          </n-space>
+          <n-space vertical>
+            <n-space>
+              <n-button type="primary" attr-type="submit">Reset PIN</n-button>
+              <n-button @click="showForgot = false">Cancel</n-button>
+            </n-space>
+            <n-alert v-if="forgotError" type="error" closable @close="forgotError = ''">{{ forgotError }}</n-alert>
+          </n-space>
+        </n-form>
       </n-card>
     </n-space>
   </div>
 </template>
+
+<style scoped>
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 80px 0;
+}
+</style>

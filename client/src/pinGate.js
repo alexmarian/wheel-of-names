@@ -1,7 +1,7 @@
 // Global PIN gate: any write that 401s raises the prompt modal, retries with
 // the entered PIN, and stores it (sessionStorage) so subsequent writes pass.
 import { reactive } from 'vue';
-import { api, pinStore } from './api.js';
+import { pinStore } from './api.js';
 
 export const gate = reactive({
   open: false,
@@ -10,9 +10,22 @@ export const gate = reactive({
   message: '',
   error: '',
   busy: false,
+  attempt: 0, // bumped on every wrong PIN so the prompt can clear its input
 });
 
 let pending = null;
+
+// Dismissing the prompt is not a failure; views check this and stay quiet.
+export const isCancelled = (e) => !!e?.cancelled;
+
+export function authErrorMessage(e, credential = 'PIN') {
+  if (e.status !== 401) return e.message;
+  if (e.retryInMs > 0) {
+    const min = Math.max(1, Math.ceil(e.retryInMs / 60000));
+    return `Too many attempts. Try again in ${min} min.`;
+  }
+  return `Wrong ${credential}`;
+}
 
 export function requireAuth(teamId, action, title, message) {
   return new Promise((resolve, reject) => {
@@ -26,15 +39,13 @@ export function requireAuth(teamId, action, title, message) {
 }
 
 // Ask the server to run `action(pin)`. On 401 the prompt opens; on success the
-// pin is remembered for subsequent calls.
+// pin is remembered for subsequent calls. A lockout is rethrown as-is so the
+// caller can show the remaining wait.
 export async function runWithPin(teamId, action, { title, message } = {}) {
   try {
     return await action(pinStore.get(teamId));
   } catch (e) {
-    if (e.status === 401 && e.retryInMs > 0) {
-      throw new Error('Too many wrong PIN attempts. Try again in a few minutes.');
-    }
-    if (e.status !== 401) throw e;
+    if (e.status !== 401 || e.retryInMs > 0) throw e;
     return requireAuth(teamId, action, title, message);
   }
 }
@@ -46,14 +57,15 @@ export function submitPin(pin) {
   pending
     .action(pin)
     .then((res) => {
-      // request() already cached the pin (with a fresh 10-min window) on success.
       gate.open = false;
       pending.resolve(res);
       pending = null;
     })
     .catch((e) => {
-      if (e.status === 401) gate.error = e.retryInMs ? 'Too many attempts — try later.' : 'Wrong PIN';
-      else {
+      if (e.status === 401) {
+        gate.error = authErrorMessage(e);
+        gate.attempt++;
+      } else {
         gate.open = false;
         pending.reject(e);
         pending = null;
@@ -66,13 +78,8 @@ export function submitPin(pin) {
 
 export function cancelPin() {
   gate.open = false;
-  if (pending) pending.reject(new Error('cancelled'));
+  if (pending) pending.reject(Object.assign(new Error('cancelled'), { cancelled: true }));
   pending = null;
 }
 
-// convenience for views
-export async function write(teamId, fn, opts) {
-  return runWithPin(teamId, fn, opts);
-}
-
-api; // (kept for tree-shaking safety)
+export const write = runWithPin;

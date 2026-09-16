@@ -1,7 +1,7 @@
 <script setup>
-// Sits between the reveal animation and the action buttons. Any theme that
-// emits 'finished' ends up here via WheelView.
+// Overlays the settled animation once a theme emits 'finished'.
 import { computed } from 'vue';
+import { NText } from 'naive-ui';
 
 const props = defineProps({
   winner: { type: Object, required: true }, // {id, name}
@@ -13,7 +13,7 @@ const PARTICLES = 26;
 const particles = computed(() =>
   Array.from({ length: PARTICLES }, (_, i) => {
     const angle = (i / PARTICLES) * 360 + (Math.random() * 10 - 5);
-    const dist = 60 + Math.random() * 70;
+    const dist = 90 + Math.random() * 90;
     const rad = (angle * Math.PI) / 180;
     return {
       id: i,
@@ -28,45 +28,60 @@ const particles = computed(() =>
 </script>
 
 <template>
-  <div class="announce">
-    <div class="burst" aria-hidden="true">
-      <span
-        v-for="p in particles"
-        :key="p.id"
-        class="spark"
-        :style="{
-          '--dx': p.dx + 'px',
-          '--dy': p.dy + 'px',
-          'animation-delay': p.delay + 's',
-          background: `hsl(${p.hue} 85% 65%)`,
-          width: p.size + 'px',
-          height: p.size + 'px',
-        }"
-      />
+  <div class="announce" role="status">
+    <div class="panel">
+      <div class="burst" aria-hidden="true">
+        <span
+          v-for="p in particles"
+          :key="p.id"
+          class="spark"
+          :style="{
+            '--dx': p.dx + 'px',
+            '--dy': p.dy + 'px',
+            'animation-delay': p.delay + 's',
+            background: `hsl(${p.hue} 85% 65%)`,
+            width: p.size + 'px',
+            height: p.size + 'px',
+          }"
+        />
+      </div>
+      <div class="name">{{ winner.name }}</div>
+      <n-text depth="3">{{ mode === 'preview' ? 'Preview only, not recorded' : 'is up today' }}</n-text>
     </div>
-    <p class="winner-line">
-      🎉 <b>{{ winner.name }}</b> is up today
-    </p>
-    <p v-if="mode === 'preview'" class="muted preview-tag">(preview — not recorded)</p>
   </div>
 </template>
 
 <style scoped>
 .announce {
-  position: relative;
-  text-align: center;
-  padding: 6px 0 2px;
-}
-.winner-line {
-  position: relative;
+  position: absolute;
+  inset: 0;
   z-index: 1;
-  margin: 0;
-  font-size: 19px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 24px 44px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg) 78%, transparent);
+  backdrop-filter: blur(10px);
   animation: pop 0.45s cubic-bezier(0.22, 1.4, 0.4, 1);
 }
-.preview-tag {
-  margin: 2px 0 0;
-  font-size: 13px;
+.name {
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1.1;
+  max-width: 70vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .burst {
   position: absolute;
@@ -74,7 +89,6 @@ const particles = computed(() =>
   display: flex;
   align-items: center;
   justify-content: center;
-  pointer-events: none;
 }
 .spark {
   position: absolute;
@@ -101,11 +115,19 @@ const particles = computed(() =>
     opacity: 0;
   }
   60% {
-    transform: scale(1.08);
+    transform: scale(1.06);
     opacity: 1;
   }
   100% {
     transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .panel {
+    animation: none;
+  }
+  .spark {
+    display: none;
   }
 }
 </style>

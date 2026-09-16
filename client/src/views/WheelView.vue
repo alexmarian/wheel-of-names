@@ -1,9 +1,9 @@
 <script setup>
 import { onMounted, ref, computed } from 'vue';
 import { useRoute } from 'vue-router';
-import { NCard, NButton, NSpace } from 'naive-ui';
+import { NCard, NButton, NSpace, NAlert, NSpin, NEmpty } from 'naive-ui';
 import { api } from '../api.js';
-import { write } from '../pinGate.js';
+import { write, isCancelled, authErrorMessage } from '../pinGate.js';
 import SpinReveal from '../components/SpinReveal.vue';
 import WinnerAnnouncement from '../components/WinnerAnnouncement.vue';
 
@@ -12,6 +12,7 @@ const teamId = route.params.id;
 
 const state = ref(null);
 const loading = ref(true);
+const loadError = ref('');
 const error = ref('');
 const busy = ref(false);
 const show = ref(null); // { winner, mode }
@@ -20,12 +21,10 @@ const finished = ref(false);
 
 async function load() {
   loading.value = true;
-  error.value = '';
   try {
     state.value = await api.getTeam(teamId);
-    document.title = `Wheel — ${state.value.team.name}`;
   } catch (e) {
-    error.value = e.message;
+    loadError.value = e.message;
   } finally {
     loading.value = false;
   }
@@ -34,99 +33,120 @@ async function load() {
 async function doSpin(preview = false) {
   error.value = '';
   busy.value = true;
-  finished.value = false;
   try {
+    let res;
     if (preview) {
-      const res = await api.preview(teamId);
-      show.value = { winner: res.winner, mode: 'preview' };
+      res = await api.preview(teamId);
     } else {
-      const res = await write(teamId, (pin) => api.spin(teamId, pin), {
+      res = await write(teamId, (pin) => api.spin(teamId, pin), {
         title: 'Record a pick',
-        message: 'Enter the PIN — this pick will be recorded.',
+        message: 'Enter the PIN. This pick will be recorded.',
       });
       state.value = { team: res.team, members: res.members, meta: res.meta };
-      show.value = { winner: res.winner, mode: 'real' };
     }
+    finished.value = false;
+    show.value = { winner: res.winner, mode: preview ? 'preview' : 'real' };
     revealKey.value++;
   } catch (e) {
-    error.value = e.message;
+    if (!isCancelled(e)) error.value = authErrorMessage(e);
   } finally {
     busy.value = false;
   }
 }
 
-function onFinished() {
-  finished.value = true;
-}
-
-const activeMembers = computed(
-  () => state.value?.members.filter((m) => !m.absent) || []
-);
+const activeMembers = computed(() => state.value?.members.filter((m) => !m.absent) || []);
 
 onMounted(load);
 </script>
 
 <template>
   <div>
-    <div v-if="loading" class="empty">Loading…</div>
-    <p v-else-if="error" class="error">{{ error }}</p>
+    <n-spin v-if="loading" size="large" class="loading" />
+    <n-alert v-else-if="!state" type="error" title="Could not load this team">{{ loadError }}</n-alert>
 
-    <n-space v-else-if="state" vertical size="large" style="width: 100%">
-      <!-- Reveal area -->
-      <n-card>
-        <SpinReveal
-          v-if="show?.winner"
-          :key="revealKey"
-          :entries="state.members"
-          :winner-id="show.winner.id"
-          :theme="state.team.theme"
-          @finished="onFinished"
-        />
-        <div v-else class="idle-panel">
-          <span class="idle-icon">🎡</span>
-          <p>Press <b>Pick</b> to choose who's up today.</p>
+    <div v-else class="wheel-page">
+      <n-card class="reveal-card" content-style="padding: 12px; flex: 1; min-height: 0; display: flex">
+        <div class="reveal">
+          <SpinReveal
+            v-if="show?.winner"
+            :key="revealKey"
+            :entries="state.members"
+            :winner-id="show.winner.id"
+            :theme="state.team.theme"
+            @finished="finished = true"
+          />
+          <n-empty v-else size="large" description="Press Pick to choose who's up today." class="idle">
+            <template #icon><span class="idle-icon">🎡</span></template>
+          </n-empty>
+          <WinnerAnnouncement
+            v-if="show?.winner && finished"
+            :key="revealKey"
+            :winner="show.winner"
+            :mode="show.mode"
+          />
         </div>
       </n-card>
 
-      <WinnerAnnouncement v-if="show?.winner && finished" :key="revealKey" :winner="show.winner" :mode="show.mode" />
+      <n-space justify="center">
+        <n-button
+          type="primary"
+          size="large"
+          :loading="busy"
+          :disabled="busy || activeMembers.length === 0"
+          @click="doSpin(false)"
+        >
+          Pick
+        </n-button>
+        <n-button size="large" :disabled="busy" @click="doSpin(true)">Preview (no record)</n-button>
+      </n-space>
 
-      <div>
-        <n-space justify="center">
-          <n-button type="primary" size="large" :loading="busy" :disabled="busy || activeMembers.length === 0" @click="doSpin(false)">
-            Pick
-          </n-button>
-          <n-button size="large" tertiary :disabled="busy" @click="doSpin(true)">Preview (no record)</n-button>
-        </n-space>
-        <p v-if="activeMembers.length === 0" class="error center" style="margin-bottom: 0">
-          No active members — add people on the Roster tab, or un-mark them absent.
-        </p>
-      </div>
-    </n-space>
+      <n-alert v-if="error" type="error" closable @close="error = ''">{{ error }}</n-alert>
+      <n-alert v-if="activeMembers.length === 0" type="warning" title="No active members">
+        Add people on the Roster tab, or un-mark them absent.
+      </n-alert>
+    </div>
   </div>
 </template>
 
 <style scoped>
-.center {
-  text-align: center;
+.loading {
+  display: flex;
+  justify-content: center;
+  padding: 80px 0;
 }
-.idle-panel {
+/* Fill the viewport below the header exactly (no magic reveal height), so
+   the page never scrolls on its own; the reveal takes whatever is left after
+   the buttons. --chrome is header + page padding, set by the shell. */
+.wheel-page {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  gap: 12px;
+  height: calc(100vh - var(--chrome, 105px));
+  height: calc(100dvh - var(--chrome, 105px));
+}
+.reveal-card {
+  flex: 1;
+  min-height: 0;
+  max-height: 926px;
+  display: flex;
+  flex-direction: column;
+}
+.reveal {
+  position: relative;
+  flex: 1;
+  min-height: 320px;
+}
+/* Higher specificity than the themes' own root rules, so the layer always
+   fills the box regardless of stylesheet order. */
+.wheel-page .reveal > * {
+  position: absolute;
+  inset: 0;
+}
+.idle {
   justify-content: center;
-  gap: 10px;
-  min-height: 560px;
-  padding: 20px;
-  border: 1px dashed var(--border);
-  border-radius: 12px;
-  color: var(--muted);
-  text-align: center;
 }
 .idle-icon {
-  font-size: 30px;
-  opacity: 0.55;
-}
-.idle-panel p {
-  margin: 0;
+  font-size: 40px;
+  opacity: 0.6;
 }
 </style>
