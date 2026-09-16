@@ -1,0 +1,8 @@
+won.doxbit.com {
+        reverse_proxy wheel-of-names:3000
+        log {
+                output file /var/log/caddy/won.doxbit.access.log
+                format console
+                level ERROR
+        }
+}

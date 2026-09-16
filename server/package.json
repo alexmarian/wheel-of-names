@@ -1,0 +1,15 @@
+{
+  "name": "wheel-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/index.js",
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "node-cron": "^3.0.3"
+  }
+}

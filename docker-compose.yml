@@ -1,0 +1,20 @@
+# Local development compose — optional; you can also just run the two dev
+# scripts directly (npm run dev:server + npm run dev:client).
+services:
+
+  wheel:
+    image: node:22-slim
+    working_dir: /app/server
+    command: sh -c "cd /app/server && npm install && npm run dev"
+    volumes:
+      - .:/app
+      - wheel-data:/app/data
+    environment:
+      - PORT=3000
+      - DATA_DIR=/app/data
+    ports:
+      - "3000:3000"
+    stdin_open: true
+
+volumes:
+  wheel-data:

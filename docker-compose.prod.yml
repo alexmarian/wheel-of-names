@@ -1,0 +1,22 @@
+services:
+
+  wheel:
+    image: wheel-of-names:${IMAGE_TAG:-latest}
+    build:
+      context: .
+      target: prod
+    container_name: wheel-of-names
+    expose:
+      - "3000"
+    env_file:
+      - .env.prod
+    volumes:
+      - ${DATA_DIR_HOST}:/data
+    restart: unless-stopped
+    networks:
+      - caddy-proxy
+      - default
+
+networks:
+  caddy-proxy:
+    external: true
