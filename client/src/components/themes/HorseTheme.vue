@@ -60,6 +60,7 @@ const runnerStyle = (i) => (props.variant === 'colour' ? {} : { backgroundColor:
   isolation: isolate;
   --runner-w: 72px;
   --runner-h: 45px;
+  --flip: -1; /* silhouette art faces left; the race runs left-to-right */
   position: relative;
   width: 100%;
   height: 100%;
@@ -121,14 +122,14 @@ const runnerStyle = (i) => (props.variant === 'colour' ? {} : { backgroundColor:
   mask-image: url('../../assets/horse/gallop-sprite.png');
   -webkit-mask-repeat: no-repeat;
   mask-repeat: no-repeat;
-  -webkit-mask-size: calc(var(--frames) * 100%) 100%;
-  mask-size: calc(var(--frames) * 100%) 100%;
+  -webkit-mask-size: 1200% 100%;
+  mask-size: 1200% 100%;
   -webkit-mask-position: 0 0;
   mask-position: 0 0;
 }
 .runner.galloping {
   animation-name: gallop-frames, gallop-bob;
-  animation-timing-function: steps(var(--frames)), ease-in-out;
+  animation-timing-function: steps(12), ease-in-out;
   animation-iteration-count: infinite;
 }
 .runner.win {
@@ -143,8 +144,8 @@ const runnerStyle = (i) => (props.variant === 'colour' ? {} : { backgroundColor:
     mask-position-x: 0;
   }
   to {
-    -webkit-mask-position-x: calc(var(--runner-w) * -1 * var(--frames));
-    mask-position-x: calc(var(--runner-w) * -1 * var(--frames));
+    -webkit-mask-position-x: calc(var(--runner-w) * -12);
+    mask-position-x: calc(var(--runner-w) * -12);
   }
 }
 @keyframes gallop-bob {
@@ -196,7 +197,6 @@ const runnerStyle = (i) => (props.variant === 'colour' ? {} : { backgroundColor:
 .variant-colour {
   --runner-w: 96px;
   --runner-h: 84px;
-  --frames: 11;
   --flip: 1; /* painted art already faces right */
 }
 .variant-colour .lane {
@@ -208,11 +208,12 @@ const runnerStyle = (i) => (props.variant === 'colour' ? {} : { backgroundColor:
   mask-image: none;
   background-image: url('../../assets/derby/gallop-sprite.png');
   background-repeat: no-repeat;
-  background-size: calc(var(--frames) * 100%) 100%;
+  background-size: 1100% 100%; /* 11 frames */
   background-position: 0 0;
 }
 .variant-colour .runner.galloping {
   animation-name: gallop-frames-bg, gallop-bob;
+  animation-timing-function: steps(11), ease-in-out;
 }
 .variant-colour .runner.win {
   background-position: calc(var(--runner-w) * -2) 0;
@@ -222,7 +223,7 @@ const runnerStyle = (i) => (props.variant === 'colour' ? {} : { backgroundColor:
     background-position-x: 0;
   }
   to {
-    background-position-x: calc(var(--runner-w) * -1 * var(--frames));
+    background-position-x: calc(var(--runner-w) * -11);
   }
 }
 </style>
