@@ -21,6 +21,17 @@ source .env.deploy
 : "${DATA_DIR_HOST:?DATA_DIR_HOST not set in .env.deploy}"
 export DATA_DIR_HOST
 
+# .env.deploy is sourced by the LOCAL shell, so an unquoted ~ in REMOTE_DIR
+# expands to the local home (e.g. /home/alex) — a path the VPS user can't
+# create. Use a path relative to the remote home instead (containers/wheel).
+case "$REMOTE_DIR" in
+  "$HOME"|"$HOME"/*)
+    echo "✗ REMOTE_DIR expanded to your LOCAL home ($REMOTE_DIR)." >&2
+    echo "  In .env.deploy set it relative to the VPS home, e.g. REMOTE_DIR=containers/wheel-of-names" >&2
+    exit 1 ;;
+esac
+REMOTE_DIR="${REMOTE_DIR#\~/}" # a quoted '~/x' is fine too; ssh/scp resolve it against the remote home
+
 SSH_OPTS="-i $SSH_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
 SSH="ssh $SSH_OPTS"
 SCP="scp $SSH_OPTS"
@@ -30,7 +41,7 @@ IMG="wheel-of-names"
 # ── Optional Caddy site sync (see CADDY_SYNC below) ─────────────────────────
 # Override these if the VPS Caddy layout differs from the defaults.
 CADDY_SITE="${CADDY_SITE:-caddy/sites/won.doxbit.com.caddy}"
-CADDY_REMOTE_SITES="${CADDY_REMOTE_SITES:-~/containers/caddy/sites}"
+CADDY_REMOTE_SITES="${CADDY_REMOTE_SITES:-containers/caddy/sites}" # relative to the remote home
 CADDY_CONTAINER="${CADDY_CONTAINER:-caddy}"
 CADDY_CONFIG="${CADDY_CONFIG:-/etc/caddy/Caddyfile}"
 
